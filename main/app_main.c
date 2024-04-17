@@ -1,30 +1,16 @@
-#include <stdio.h>
 #include <socket.h>
-#include <time.h>
-#include <unistd.h>
-#include <sys/time.h>
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/event_groups.h"
-#include "driver/gpio.h"
-#include "esp_system.h"
 #include "esp_wifi.h"
-#include "esp_wifi_types_generic.h"
 #include "esp_event.h"
-#include "esp_log.h"
-#include "esp_attr.h"
 #include "esp_netif_sntp.h"
-#include "esp_sntp.h"
 #include "nvs_flash.h"
 #include "led_strip.h"
 #include "aht.h"
 #include "cbor.h"
-#include "lwip/err.h"
-#include "lwip/ip_addr.h"
-#include "lwip/sys.h"
 #include "config.h"
-// #include <driver/i2c_master.h>
 
 #define BLINK_GPIO              CONFIG_BLINK_GPIO
 #define TASK_PRIORITY           1
@@ -171,8 +157,7 @@ static void sync_time(void)
     esp_netif_sntp_deinit();
 
     // Set time zone information
-    // TODO: Add a #define for the time zone string
-    setenv("TZ", "EST5EDT,M3.2.0/2,M11.1.0", 1);
+    setenv("TZ", TIMEZONE, 1);
     tzset();
 }
 

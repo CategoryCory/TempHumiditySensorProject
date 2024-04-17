@@ -3,7 +3,10 @@
 
 #include "freertos/FreeRTOS.h"
 #include "driver/i2c.h"
+
+// TODO: Use this header instead
 // #include "driver/i2c_master.h"
+
 #include "driver/gpio.h"
 #include "esp_bit_defs.h"
 #include "esp_check.h"
