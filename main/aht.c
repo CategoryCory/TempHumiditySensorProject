@@ -107,8 +107,6 @@ esp_err_t aht20_read_measures(aht20_data *data_out) {
         raw_humidity = raw_humidity << 8;
         raw_humidity += buf[3];
         raw_humidity = raw_humidity >> 4;
-        // *rel_humidity = (float)raw_humidity * 100 / 1048576;
-        // data_out->relative_humidity = (float)raw_humidity * 100 / 1048576;
         data_out->relative_humidity = (float)raw_humidity * 0.000095367;
 
         raw_temperature = buf[3] & 0x0F;
@@ -116,7 +114,6 @@ esp_err_t aht20_read_measures(aht20_data *data_out) {
         raw_temperature += buf[4];
         raw_temperature = raw_temperature << 8;
         raw_temperature += buf[5];
-        // data_out->temperature_celsius = (float)raw_temperature * 200 / 1048576 - 50;
         data_out->temperature_celsius = (float)raw_temperature * 0.000190735 - 50;
         return ESP_OK;
     } else {

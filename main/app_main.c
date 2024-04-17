@@ -36,12 +36,15 @@
 #define MAX_CBOR_BUFFER_SIZE    128
 #define UDP_MAX_ATTEMPTS        3
 #define UDP_TIMEOUT             5
+#define QUEUE_LENGTH            1
 
 static const char *TAG = "Temp/Humidity Sensor";
 
 static EventGroupHandle_t wifi_event_group;
 static led_strip_handle_t led_strip;
-static aht20_data recorded_data;
+static aht20_data shared_recorded_data;
+
+static SemaphoreHandle_t data_available_semaphore;
 
 static int wifi_connect_retries;
 
@@ -145,7 +148,7 @@ static void wifi_init_sta(void)
 
 static void time_sync_notification_db(struct timeval *tv)
 {
-    ESP_LOGI(TAG, "Notification of a time synchronization event.");
+    ESP_LOGI(TAG, "Time synchronization event");
 }
 
 static void sync_time(void)
@@ -168,12 +171,33 @@ static void sync_time(void)
     esp_netif_sntp_deinit();
 
     // Set time zone information
+    // TODO: Add a #define for the time zone string
     setenv("TZ", "EST5EDT,M3.2.0/2,M11.1.0", 1);
     tzset();
 }
 
 void read_aht20(void *pvParameters)
 {
+    while (1) {
+        // Read AHT20
+        if (aht20_read_measures(&shared_recorded_data) == 0)
+        {
+            xSemaphoreGive(data_available_semaphore);
+        }
+        else
+        {
+            ESP_LOGE(TAG, "Unable to acquire reading from AHT20.");
+        }
+
+        // Wait before reading AHT20 again
+        // TODO: Define time to delay as a #define constant
+        vTaskDelay(5000 / portTICK_PERIOD_MS);
+    }
+}
+
+void send_data_to_server(void *pvParameter)
+{
+    aht20_data recorded_data;
     CborEncoder encoder;
     CborEncoder map_encoder;
     uint8_t cbor_buffer[MAX_CBOR_BUFFER_SIZE];
@@ -224,105 +248,88 @@ void read_aht20(void *pvParameters)
 
     bind(socketfd, (struct sockaddr *) &local_addr, sizeof(local_addr));
 
-    while (1) {
-        // Turn LED on
-        led_strip_set_pixel_hsv(led_strip, 0, 120, 255, 32);
-        led_strip_refresh(led_strip);
-        vTaskDelay(100 / portTICK_PERIOD_MS);
-
-        // Read AHT20
-        aht20_read_measures(&recorded_data);
-
-        // Clear buffer for CBOR object
-        memset(cbor_buffer, 0, sizeof(cbor_buffer));
-        memset(ack_buffer, 0, sizeof(ack_buffer));
-
-        // Get time for current recording
-        now = time(NULL);
-
-        // Initialize CBOR encoders
-        cbor_encoder_init(&encoder, cbor_buffer, sizeof(cbor_buffer), 0);
-        cbor_encoder_create_map(&encoder, &map_encoder, 3);
-
-        // Create map -- temp_c:float
-        cbor_encode_text_stringz(&map_encoder, "temp_c");
-        cbor_encode_float(&map_encoder, recorded_data.temperature_celsius);  
-
-        // Create map -- hmd:float
-        cbor_encode_text_stringz(&map_encoder, "hmd");
-        cbor_encode_float(&map_encoder, recorded_data.relative_humidity);
-
-        // Create map -- time:uint64_t
-        cbor_encode_text_stringz(&map_encoder, "time");
-        cbor_encode_uint(&map_encoder, now);
-
-        // Close CBOR container
-        cbor_encoder_close_container(&encoder, &map_encoder);
-
-        // Get buffer size
-        encoded_size = cbor_encoder_get_buffer_size(&encoder, cbor_buffer);
-
-        // Log messages for debugging
-        // TODO: Remove these when deploying
-        // ESP_LOGI(TAG, "Buffer: %s", cbor_buffer);
-        ESP_LOGI(TAG, "WiFi %s", xEventGroupGetBits(wifi_event_group) & WIFI_CONNECTED_BIT ? "connected" : "disconnected");
-
-        udp_attempts = 0;
-        udp_sent = false;
-        ESP_LOGI(TAG, "SocketFD: %d", socketfd);
-        if (connect(socketfd, (struct sockaddr *) &server_addr, sizeof(server_addr)) >= 0)
+    while (1)
+    {
+        if (xSemaphoreTake(data_available_semaphore, 0) == pdPASS)
         {
-            while (!udp_sent && udp_attempts < UDP_MAX_ATTEMPTS)
-            {
-                ESP_LOGI(TAG, "Attempting to send message...");
-                size_t bytes_sent = sendto(socketfd, cbor_buffer, encoded_size, 0, (struct sockaddr *) &server_addr, sizeof(server_addr));
-                udp_attempts++;
+            recorded_data = shared_recorded_data;
 
-                ssize_t s_bytes_received = recvfrom(socketfd, ack_buffer, sizeof(cbor_buffer), 0, NULL, NULL);
-                if (s_bytes_received > 0)
+            // Turn LED on
+            led_strip_set_pixel_hsv(led_strip, 0, 120, 255, 32);
+            led_strip_refresh(led_strip);
+            vTaskDelay(100 / portTICK_PERIOD_MS);
+
+            // Clear buffer for CBOR object
+            memset(cbor_buffer, 0, sizeof(cbor_buffer));
+            memset(ack_buffer, 0, sizeof(ack_buffer));
+
+            // Get time for current recording
+            now = time(NULL);
+
+            // Initialize CBOR encoders
+            cbor_encoder_init(&encoder, cbor_buffer, sizeof(cbor_buffer), 0);
+            cbor_encoder_create_map(&encoder, &map_encoder, 3);
+
+            // Create map -- temp_c:float
+            cbor_encode_text_stringz(&map_encoder, "temp_c");
+            cbor_encode_float(&map_encoder, recorded_data.temperature_celsius);  
+
+            // Create map -- hmd:float
+            cbor_encode_text_stringz(&map_encoder, "hmd");
+            cbor_encode_float(&map_encoder, recorded_data.relative_humidity);
+
+            // Create map -- time:uint64_t
+            cbor_encode_text_stringz(&map_encoder, "time");
+            cbor_encode_uint(&map_encoder, now);
+
+            // Close CBOR container
+            cbor_encoder_close_container(&encoder, &map_encoder);
+
+            // Get buffer size
+            encoded_size = cbor_encoder_get_buffer_size(&encoder, cbor_buffer);
+
+            udp_attempts = 0;
+            udp_sent = false;
+
+            if (connect(socketfd, (struct sockaddr *) &server_addr, sizeof(server_addr)) >= 0)
+            {
+                while (!udp_sent && udp_attempts < UDP_MAX_ATTEMPTS)
                 {
-                    ack_buffer[s_bytes_received] = '\0';
-                    if (strcmp(ack_buffer, "ACK") == 0)
+                    ESP_LOGI(TAG, "Sending message...");
+                    size_t bytes_sent = sendto(socketfd, cbor_buffer, encoded_size, 0, (struct sockaddr *) &server_addr, sizeof(server_addr));
+                    udp_attempts++;
+
+                    ssize_t s_bytes_received = recvfrom(socketfd, ack_buffer, sizeof(cbor_buffer), 0, NULL, NULL);
+                    if (s_bytes_received > 0)
                     {
-                        udp_sent = true;
-                        ESP_LOGI(TAG, "ACK received. Data sent successfully.");
+                        ack_buffer[s_bytes_received] = '\0';
+                        if (strcmp(ack_buffer, "ACK") == 0)
+                        {
+                            udp_sent = true;
+                            ESP_LOGI(TAG, "ACK received. Data sent successfully.");
+                        }
+                    }
+                    else
+                    {
+                        ESP_LOGI(TAG, "No ACK received. Resending data...");
                     }
                 }
-                else
+
+                if (!udp_sent)
                 {
-                    ESP_LOGI(TAG, "No ACK received. Resending data...");
+                    ESP_LOGI(TAG, "Failed to send data after %d attempts.", udp_attempts);
                 }
             }
-
-            if (!udp_sent)
+            else
             {
-                ESP_LOGI(TAG, "Failed to send data after %d attempts.", udp_attempts);
+                ESP_LOGI(TAG, "UDP connection failed.");
             }
 
-            // ESP_LOGI(TAG, "Encoded buffer size: %d", encoded_size);
-            // ESP_LOGI(TAG, "UDP bytes sent: %d", bytes_sent);
-        }
-        else
-        {
-            ESP_LOGI(TAG, "UDP connection failed.");
+            // Turn LED off
+            led_strip_clear(led_strip);
         }
 
-        // puts("");
-
-        // TODO: Debugging stuff, remove for deployment
-        CborParser root_parser;
-        CborValue it;
-        cbor_parser_init(cbor_buffer, sizeof(cbor_buffer), 0, &root_parser, &it);
-        cbor_value_to_json(stdout, &it, 0);
-        puts("");
-        puts("");
-
-        // Turn LED off
-        led_strip_clear(led_strip);
-
-        // Wait before reading AHT20 again
-        // TODO: Define time to delay as a #define constant
-        vTaskDelay(5000 / portTICK_PERIOD_MS);
+        vTaskDelay(1000 / portTICK_PERIOD_MS);
     }
 
     close(socketfd);
@@ -341,6 +348,11 @@ void app_main(void)
     }
     ESP_ERROR_CHECK(ret);
 
+    // Create semaphore
+    data_available_semaphore = xSemaphoreCreateBinary();
+
+    // TODO: Make sure data_available_semaphore isn't NULL
+
     // Initialize services
     configure_led();
     aht20_i2c_setup();
@@ -356,5 +368,26 @@ void app_main(void)
     // TODO: Is this delay necessary?
     vTaskDelay(250 / portTICK_PERIOD_MS);
 
-    xTaskCreatePinnedToCore(read_aht20, "read_aht20", 10000, NULL, (3|portPRIVILEGE_BIT), NULL, CORE_0);
+    xTaskCreatePinnedToCore(read_aht20, 
+                            "read_aht20", 
+                            5000, 
+                            NULL, 
+                            1, 
+                            NULL, 
+                            CORE_0
+                        );
+
+    xTaskCreatePinnedToCore(send_data_to_server, 
+                            "send_data_to_server", 
+                            5000, 
+                            NULL, 
+                            1, 
+                            NULL,
+                            CORE_1
+                        );
+
+    while (1) 
+    {
+        vTaskDelay(10 / portTICK_PERIOD_MS);
+    }
 }
