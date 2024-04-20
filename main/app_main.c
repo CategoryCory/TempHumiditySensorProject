@@ -176,7 +176,7 @@ void read_aht20(void *pvParameters)
 
         // Wait before reading AHT20 again
         // TODO: Define time to delay as a #define constant
-        vTaskDelay(5000 / portTICK_PERIOD_MS);
+        vTaskDelay((1000 * 60 * 5) / portTICK_PERIOD_MS);
     }
 }
 
@@ -314,7 +314,7 @@ void send_data_to_server(void *pvParameter)
             led_strip_clear(led_strip);
         }
 
-        vTaskDelay(1000 / portTICK_PERIOD_MS);
+        vTaskDelay((1000 * 60) / portTICK_PERIOD_MS);
     }
 
     close(socketfd);
