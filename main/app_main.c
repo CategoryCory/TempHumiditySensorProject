@@ -28,10 +28,7 @@ static const char *TAG = "Temp/Humidity Sensor";
 
 static EventGroupHandle_t wifi_event_group;
 static led_strip_handle_t led_strip;
-static aht20_data shared_recorded_data;
-
-static SemaphoreHandle_t data_available_semaphore;
-
+static QueueHandle_t msg_queue;
 static int wifi_connect_retries;
 
 static void configure_led(void)
@@ -163,11 +160,16 @@ static void sync_time(void)
 
 void read_aht20(void *pvParameters)
 {
+    aht20_data recorded_data = {0};
+
     while (1) {
         // Read AHT20
-        if (aht20_read_measures(&shared_recorded_data) == 0)
+        if (aht20_read_measures(&recorded_data) == 0)
         {
-            xSemaphoreGive(data_available_semaphore);
+            if (xQueueSend(msg_queue, (void *) &recorded_data, 10) != pdTRUE)
+            {
+                ESP_LOGE(TAG, "Unable to add measurement to queue.");
+            }
         }
         else
         {
@@ -235,10 +237,8 @@ void send_data_to_server(void *pvParameter)
 
     while (1)
     {
-        if (xSemaphoreTake(data_available_semaphore, 0) == pdPASS)
+        if (xQueueReceive(msg_queue, (void *) &recorded_data, 0) == pdTRUE)
         {
-            recorded_data = shared_recorded_data;
-
             // Turn LED on
             led_strip_set_pixel_hsv(led_strip, 0, 120, 255, 32);
             led_strip_refresh(led_strip);
@@ -314,7 +314,7 @@ void send_data_to_server(void *pvParameter)
             led_strip_clear(led_strip);
         }
 
-        vTaskDelay((1000 * 60) / portTICK_PERIOD_MS);
+        vTaskDelay((1000 * 60 * 1) / portTICK_PERIOD_MS);
     }
 
     close(socketfd);
@@ -333,10 +333,8 @@ void app_main(void)
     }
     ESP_ERROR_CHECK(ret);
 
-    // Create semaphore
-    data_available_semaphore = xSemaphoreCreateBinary();
-
-    // TODO: Make sure data_available_semaphore isn't NULL
+    // Initialize queue
+    msg_queue = xQueueCreate(QUEUE_LENGTH, sizeof(aht20_data));
 
     // Initialize services
     configure_led();
