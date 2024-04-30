@@ -19,7 +19,6 @@
 #define WIFI_MAX_RETRY          5
 #define WIFI_CONNECTED_BIT      BIT0
 #define WIFI_FAIL_BIT           BIT1
-#define MAX_CBOR_BUFFER_SIZE    128
 #define UDP_MAX_ATTEMPTS        3
 #define UDP_TIMEOUT             5
 #define QUEUE_LENGTH            1
@@ -129,7 +128,7 @@ static void wifi_init_sta(void)
     
 }
 
-static void time_sync_notification_db(struct timeval *tv)
+static void time_sync_notification_db([[maybe_unused]] struct timeval *tv)
 {
     ESP_LOGI(TAG, "Time synchronization event");
 }
@@ -177,8 +176,7 @@ void read_aht20(void *pvParameters)
         }
 
         // Wait before reading AHT20 again
-        // TODO: Define time to delay as a #define constant
-        vTaskDelay((1000 * 60 * 5) / portTICK_PERIOD_MS);
+        vTaskDelay((1000 * READ_SENSOR_SECONDS) / portTICK_PERIOD_MS);
     }
 }
 
@@ -188,7 +186,7 @@ void send_data_to_server(void *pvParameter)
     CborEncoder encoder;
     CborEncoder map_encoder;
     uint8_t cbor_buffer[MAX_CBOR_BUFFER_SIZE];
-    char ack_buffer[16];    // TODO: Should this be a #define constant?
+    char ack_buffer[16];
     size_t encoded_size;
 
     int socketfd;
@@ -222,11 +220,6 @@ void send_data_to_server(void *pvParameter)
     server_addr.sin_family = AF_INET;
     server_addr.sin_addr.s_addr = inet_addr(UDP_SERVER_IP);
     server_addr.sin_port = htons(UDP_SERVER_PORT);
-
-    // Set UDP connection as blocking
-    // TODO: Is this necessary?
-    // int flags = fcntl(socketfd, F_GETFL, 0);
-    // fcntl(socketfd, F_SETFL, flags & ~O_NONBLOCK);
 
     // Configure client (local) IP information
     local_addr.sin_family = AF_INET;
@@ -281,7 +274,7 @@ void send_data_to_server(void *pvParameter)
                 while (!udp_sent && udp_attempts < UDP_MAX_ATTEMPTS)
                 {
                     ESP_LOGI(TAG, "Sending message...");
-                    size_t bytes_sent = sendto(socketfd, cbor_buffer, encoded_size, 0, (struct sockaddr *) &server_addr, sizeof(server_addr));
+                    [[maybe_unused]] size_t bytes_sent = sendto(socketfd, cbor_buffer, encoded_size, 0, (struct sockaddr *) &server_addr, sizeof(server_addr));
                     udp_attempts++;
 
                     ssize_t s_bytes_received = recvfrom(socketfd, ack_buffer, sizeof(cbor_buffer), 0, NULL, NULL);
@@ -314,7 +307,7 @@ void send_data_to_server(void *pvParameter)
             led_strip_clear(led_strip);
         }
 
-        vTaskDelay((1000 * 60 * 1) / portTICK_PERIOD_MS);
+        vTaskDelay((1000 * SEND_DATA_SECONDS) / portTICK_PERIOD_MS);
     }
 
     close(socketfd);
@@ -347,9 +340,6 @@ void app_main(void)
 
     // Set date and time
     sync_time();
-
-    // TODO: Is this delay necessary?
-    vTaskDelay(250 / portTICK_PERIOD_MS);
 
     xTaskCreatePinnedToCore(read_aht20, 
                             "read_aht20", 
