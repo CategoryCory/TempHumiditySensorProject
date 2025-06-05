@@ -233,7 +233,7 @@ void send_data_to_server(void *pvParameter)
         if (xQueueReceive(msg_queue, (void *) &recorded_data, 0) == pdTRUE)
         {
             // Turn LED on
-            led_strip_set_pixel_hsv(led_strip, 0, 120, 255, 32);
+            led_strip_set_pixel_hsv(led_strip, 0, 300, 255, 20);
             led_strip_refresh(led_strip);
             vTaskDelay(100 / portTICK_PERIOD_MS);
 
