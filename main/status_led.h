@@ -21,7 +21,10 @@ typedef struct
 void configure_led(void);
 
 /**
- * @brief Turns the status LED on using the color info @p hsv_info.
+ * @brief Turns the status LED on.
+ * 
+ * This function turns on the onboard status LED. For setting the color of the LED, the
+ * function uses the color info @p hsv_info.
  * 
  * @param hsv_info The HSV color info to use for the LED.
  */

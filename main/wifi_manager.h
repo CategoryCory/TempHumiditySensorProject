@@ -11,7 +11,8 @@ extern "C" {
 
 /**
  * @brief Initialize and connect to Wi-Fi in station mode.
- * Blocks until connection is established or fails after a set number of retries.
+ * 
+ * @note Blocks until connection is established or fails after a set number of retries.
  * 
  * @return ESP_OK on successful connection, ESP_FAIL otherwise.
  */
