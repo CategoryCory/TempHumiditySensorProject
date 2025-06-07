@@ -10,12 +10,13 @@
 #include "nvs_flash.h"
 
 #include "config.h"
+#include "constants.h"
 
-#define WIFI_MAX_RETRY          5
-#define WIFI_CONNECTED_BIT      BIT0
-#define WIFI_FAIL_BIT           BIT1
+// #define WIFI_MAX_RETRY          5
+// #define WIFI_CONNECTED_BIT      BIT0
+// #define WIFI_FAIL_BIT           BIT1
 
-static const char *TAG = "Temp/Humidity Sensor";
+// static const char *TAG = "Temp/Humidity Sensor";
 static EventGroupHandle_t wifi_event_group;
 static int wifi_connect_retries = 0;
 
@@ -101,4 +102,10 @@ esp_err_t wifi_manager_start(void)
         ESP_LOGE(TAG, "Unexpected error");
         return ESP_FAIL;
     }
+}
+
+bool wifi_is_connected(void)
+{
+    EventBits_t bits = xEventGroupGetBits(wifi_event_group);
+    return (bits & WIFI_CONNECTED_BIT) != 0;
 }

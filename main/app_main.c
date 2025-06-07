@@ -11,66 +11,13 @@
 #include "aht.h"
 #include "cbor.h"
 #include "config.h"
+#include "constants.h"
+#include "status_led.h"
+#include "time_sync.h"
 #include "wifi_manager.h"
 
-#define BLINK_GPIO              CONFIG_BLINK_GPIO
-#define TASK_PRIORITY           1
-#define CORE_0                  0
-#define CORE_1                  1
-#define UDP_MAX_ATTEMPTS        3
-#define UDP_TIMEOUT             5
-#define QUEUE_LENGTH            1
-
-static const char *TAG = "Temp/Humidity Sensor";
-
-// static EventGroupHandle_t wifi_event_group;
-static led_strip_handle_t led_strip;
 static QueueHandle_t msg_queue;
 static int wifi_connect_retries;
-
-static void configure_led(void)
-{
-    ESP_LOGI(TAG, "Configured to blink addressable LED!");
-    led_strip_config_t strip_config = {
-        .strip_gpio_num = BLINK_GPIO,
-        .max_leds = 1, // at least one LED on board
-    };
-    led_strip_rmt_config_t rmt_config = {
-        .resolution_hz = 10 * 1000 * 1000, // 10MHz
-        .flags.with_dma = false,
-    };
-    ESP_ERROR_CHECK(led_strip_new_rmt_device(&strip_config, &rmt_config, &led_strip));
-    led_strip_clear(led_strip);
-}
-
-static void time_sync_notification_db([[maybe_unused]] struct timeval *tv)
-{
-    ESP_LOGI(TAG, "Time synchronization event");
-}
-
-static void sync_time(void)
-{
-    ESP_LOGI(TAG, "Initializing SNTP and setting system time...");
-    esp_sntp_config_t sntp_config = ESP_NETIF_SNTP_DEFAULT_CONFIG(SNTP_SERVER);
-    sntp_config.sync_cb = time_sync_notification_db;
-    sntp_config.smooth_sync = true;
-    esp_netif_sntp_init(&sntp_config);
-
-    // Wait for time to be set
-    int retry = 0;
-    const int retry_count = 15;
-
-    while (esp_netif_sntp_sync_wait(2000 / portTICK_PERIOD_MS) == ESP_ERR_TIMEOUT && ++retry < retry_count)
-    {
-        ESP_LOGI(TAG, "Waiting for system time to be set... (%d/%d)", retry, retry_count);
-    }
-    
-    esp_netif_sntp_deinit();
-
-    // Set time zone information
-    setenv("TZ", TIMEZONE, 1);
-    tzset();
-}
 
 void read_aht20(void *pvParameters)
 {
@@ -148,8 +95,9 @@ void send_data_to_server(void *pvParameter)
         if (xQueueReceive(msg_queue, (void *) &recorded_data, 0) == pdTRUE)
         {
             // Turn LED on
-            led_strip_set_pixel_hsv(led_strip, 0, 300, 255, 20);
-            led_strip_refresh(led_strip);
+            // led_strip_set_pixel_hsv(led_strip, 0, 300, 255, 20);
+            // led_strip_refresh(led_strip);
+            status_led_on(&COLOR_INFO_READ_SENSOR);
             vTaskDelay(100 / portTICK_PERIOD_MS);
 
             // Clear buffer for CBOR object
@@ -219,7 +167,8 @@ void send_data_to_server(void *pvParameter)
             }
 
             // Turn LED off
-            led_strip_clear(led_strip);
+            // led_strip_clear(led_strip);
+            status_led_off();
         }
 
         vTaskDelay((1000 * SEND_DATA_SECONDS) / portTICK_PERIOD_MS);
