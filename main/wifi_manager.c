@@ -1,4 +1,3 @@
-// wifi_manager.c
 #include "wifi_manager.h"
 
 #include "freertos/FreeRTOS.h"
@@ -12,11 +11,6 @@
 #include "config.h"
 #include "constants.h"
 
-// #define WIFI_MAX_RETRY          5
-// #define WIFI_CONNECTED_BIT      BIT0
-// #define WIFI_FAIL_BIT           BIT1
-
-// static const char *TAG = "Temp/Humidity Sensor";
 static EventGroupHandle_t wifi_event_group;
 static int wifi_connect_retries = 0;
 
