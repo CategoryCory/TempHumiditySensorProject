@@ -7,6 +7,7 @@
 #include "esp_event.h"
 #include "nvs_flash.h"
 #include "aht.h"
+#include "aht20_sensor.h"
 #include "cbor.h"
 #include "config.h"
 #include "constants.h"
@@ -17,28 +18,28 @@
 static QueueHandle_t msg_queue;
 static int wifi_connect_retries;
 
-void read_aht20(void *pvParameters)
-{
-    aht20_data recorded_data = {0};
+// void read_aht20(void *pvParameters)
+// {
+//     aht20_data recorded_data = {0};
 
-    while (1) {
-        // Read AHT20
-        if (aht20_read_measures(&recorded_data) == 0)
-        {
-            if (xQueueSend(msg_queue, (void *) &recorded_data, 10) != pdTRUE)
-            {
-                ESP_LOGE(TAG, "Unable to add measurement to queue.");
-            }
-        }
-        else
-        {
-            ESP_LOGE(TAG, "Unable to acquire reading from AHT20.");
-        }
+//     while (1) {
+//         // Read AHT20
+//         if (aht20_read_measures(&recorded_data) == 0)
+//         {
+//             if (xQueueSend(msg_queue, (void *) &recorded_data, 10) != pdTRUE)
+//             {
+//                 ESP_LOGE(TAG, "Unable to add measurement to queue.");
+//             }
+//         }
+//         else
+//         {
+//             ESP_LOGE(TAG, "Unable to acquire reading from AHT20.");
+//         }
 
-        // Wait before reading AHT20 again
-        vTaskDelay((1000 * READ_SENSOR_SECONDS) / portTICK_PERIOD_MS);
-    }
-}
+//         // Wait before reading AHT20 again
+//         vTaskDelay((1000 * READ_SENSOR_SECONDS) / portTICK_PERIOD_MS);
+//     }
+// }
 
 void send_data_to_server(void *pvParameter)
 {
@@ -206,7 +207,7 @@ void app_main(void)
     xTaskCreatePinnedToCore(read_aht20, 
                             "read_aht20", 
                             5000, 
-                            NULL, 
+                            &msg_queue, 
                             1, 
                             NULL, 
                             CORE_0
