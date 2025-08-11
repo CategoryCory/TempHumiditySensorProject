@@ -207,7 +207,7 @@ void app_main(void)
     xTaskCreatePinnedToCore(read_aht20, 
                             "read_aht20", 
                             5000, 
-                            &msg_queue, 
+                            (void *) msg_queue, 
                             1, 
                             NULL, 
                             CORE_0
